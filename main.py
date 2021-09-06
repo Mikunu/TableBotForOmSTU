@@ -7,7 +7,7 @@ import requests
 import sqlite3
 import re
 
-def saymessage(message, chatid):
+def send_Message(message, chatid):
     vk.messages.send(
         key='265b9078df036d8b0bc08fa119f73547cb9e6fd9',
         server='https://lp.vk.com/wh203658568',
@@ -104,24 +104,10 @@ def CreateTable(cur, conn):
 def makeTable(cur, event, selectedDay):
     cur.execute(f"SELECT groupname FROM chats WHERE chatid ='{str(event.chat_id)}';")
     group = cur.fetchall()[0][0]
-    # print(group)
 
-    today = datetime.datetime.today()
-    if selectedDay is None:
-        selectedDay = today.strftime('%Y.%m.%d')
-    else:
-        # 04.09.21
-        if selectedDay.find(str(today.year)) == -1:
-            selectedDay += f'.{today.year}'
-            selectedDay = datetime.datetime.strptime(selectedDay, '%d.%m.%Y').strftime('%Y.%m.%d')
-            print(selectedDay)
-
-    print(selectedDay)
-    selectedDay = datetime.datetime.strptime(selectedDay, '%Y.%m.%d')
-    message = f"{DateToday(selectedDay.isoweekday())}\n-------------\n"
+    message = f"{DateToday(selectedDay.isoweekday())}\n---------------------------\n"
     cur.execute(f"SELECT * FROM groups WHERE studgroup = '{group}' AND date = '{selectedDay.strftime('%Y.%m.%d')}';")
     all_results = cur.fetchall()
-    # print(all_results)
     if len(all_results) == 0:
         if selectedDay is not None:
             message = message + 'В этот день пар нет, отдыхайте'
@@ -150,6 +136,12 @@ def makeTable(cur, event, selectedDay):
 
     return message
 
+def check_Date_Format(date):
+    for symbol in date:
+        if symbol.isdigit() or symbol == '.':
+            return True
+    return False
+
 
 if __name__ == '__main__':
 
@@ -170,42 +162,49 @@ if __name__ == '__main__':
     groupname text
     );""")
 
-    cur.execute("""CREATE TABLE IF NOT EXISTS disciplines(
+    cur.execute("""CREATE TABLE IF NOT EXISTS disciplinelinks(
+    lineid int,
     chatid text,
-    disciplineOid text,
     discipline text,
     link text
     );""")
+
     conn.commit()
 
     for event in longpoll.listen():
         if event.type == VkBotEventType.MESSAGE_NEW:
             if 'ТТ, расписание' in str(event):
                 if event.from_chat:
-                    command = event.message.text
-                    # print(command)
-                    # print(len(command))
-                    selectedDay = ''
-                    if 'завтра' in command:
-                        selectedDay = datetime.datetime.today() + datetime.timedelta(days=1)
-                        selectedDay = selectedDay.strftime('%Y.%m.%d')
-                        command = command.replace('завтра', selectedDay)
-                    # print(command)
-                    if len(command) > 14:
-                        selectedDay = command[15:]
-                    if len(selectedDay) == 0:
-                        selectedDay = None
-                    # print(selectedDay)
+                    day = None
+                    month = None
+                    year = None
+                    if event.from_chat:
+                        selectedDay = datetime.datetime.today()
+                        message = makeTable(cur, event, selectedDay)
+
+                        send_Message(message, event.chat_id)
+
+
+            elif 'ТТ, test' in str(event):
+                if event.from_chat:
+                    regex = re.compile('TT, test ([\s\S]+\-\d+)')
+                    message = regex.match(event.message.text, event.chat_id)
+                    print(message)
+
+            elif 'ТТ, завтра' in str(event):
+                if event.from_chat:
+                    selectedDay = datetime.datetime.today() + datetime.timedelta(days=1)
                     message = makeTable(cur, event, selectedDay)
 
-                    vk.messages.send(
-                        key='4b413a03341032f343f6875f9a4e12e06a8d4a44',
-                        server='https://lp.vk.com/wh203814419',
-                        ts='4',
-                        random_id=get_random_id(),
-                        message=message,
-                        chat_id=event.chat_id
-                        )
+                    send_Message(message, event.chat_id)
+
+            elif 'ТТ, послезавтра' in str(event):
+                if event.from_chat:
+                    selectedDay = datetime.datetime.today() + datetime.timedelta(days=2)
+                    message = makeTable(cur, event, selectedDay)
+
+                    send_Message(message, event.chat_id)
+
             elif 'TT, init' in str(event):
                 if event.from_chat:
                     # TT init ИВТ-202
@@ -214,17 +213,24 @@ if __name__ == '__main__':
                     cur.execute(f"SELECT COUNT ({event.chat_id}) from chats WHERE chatid = {event.chat_id}")
                     if cur.fetchall() == 0:
                         cur.execute("INSERT INTO chats VALUES(?, ?);", chat)
-                        saymessage(f'Беседа успешно инициализирована, ваша группа {group}', event.chat_id)
+                        send_Message(f'Беседа успешно инициализирована, ваша группа {group}', event.chat_id)
                         conn.commit()
                         addlessons(GetTimetable(group), cur, conn)
                     else:
                         cur.execute(f"SELECT * from chats WHERE chatid = {event.chat_id}")
                         group = cur.fetchall()
-                        saymessage(f'Группа {group[0][1]} уже инициализирована!', event.chat_id)
+                        send_Message(f'Группа {group[0][1]} уже инициализирована!', event.chat_id)
 
-            elif 'TT, unit' in str(event):
+            elif 'TT, uninit' in str(event):
                 if event.from_chat:
-                    pass
+                    cur.execute(f"SELECT COUNT ({event.chat_id}) from chats WHERE chatid = {event.chat_id}")
+                    if cur.fetchall() == 0:
+                        send_Message(f'Беседа не инициализирована')
+                    else:
+                        cur.execute(f"DELETE FROM chats WHERE chatid = {event.chat_id}")
+                        conn.commit()
+                        send_Message(f'Связь беседы и группы разорвана')
+
             elif 'TT, добавить ссылку' in str(event):
                 if event.from_chat:
                     '''
@@ -235,9 +241,31 @@ if __name__ == '__main__':
                     Дизайн интерфейса информационных систем
                     http://b21523.vr.mirapolis.ru/mira/miravr/6456350497
                     '''
-                    linkinfo = [event.chat_id]
-                    cur.execute("INSERT INTO lecturers VALUES (?, ?, ?);", )
+                    message = event.message.text[20:]
+                    if message.find('"') == -1:
+                        send_Message('Ошибка в вводе команды, отсутствуют кавычки,', event.chat_id)
+                    result  = int(cur.execute(f"SELECT count(*) FROM disciplinelinks").fetchone()[0])
+                    print(result)
+                    if result == 0:
+                        linkid = 0
+                    else:
+                        linkid = result + 1
+
+                    disciplinename = message[message.find('"') + 1:message.rfind('"')]
+                    print(disciplinename)
+                    '''
+                    cur.execute(f"SELECT * FROM disciplinelinks WHERE discipline={disciplinename}")
+                    result = cur.fetchone()[0][0]
+                    print(result)
+                    if result is not None:
+                        send_Message('Данный предмет уже добавлен')
+                        '''
+                    link = message[message.rfind('"') + 2:]
+                    linkinfo = [linkid, event.chat_id, disciplinename, link]
+                    cur.execute("INSERT INTO disciplinelinks VALUES (?, ?, ?, ?);", linkinfo)
+                    conn.commit()
+                    send_Message(f'Ссылка {link} связана с {disciplinename}', event.chat_id)
 
             elif 'ТТ,' in str(event):
                 if event.from_chat:
-                    saymessage('Такой команды нет', event.chat_id)
+                    send_Message('Такой команды нет', event.chat_id)
