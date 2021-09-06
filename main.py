@@ -7,7 +7,7 @@ import requests
 import sqlite3
 import re
 
-def saymessage(message, chatid):
+def send_Message(message, chatid):
     vk.messages.send(
         key='265b9078df036d8b0bc08fa119f73547cb9e6fd9',
         server='https://lp.vk.com/wh203658568',
@@ -104,24 +104,10 @@ def CreateTable(cur, conn):
 def makeTable(cur, event, selectedDay):
     cur.execute(f"SELECT groupname FROM chats WHERE chatid ='{str(event.chat_id)}';")
     group = cur.fetchall()[0][0]
-    # print(group)
 
-    today = datetime.datetime.today()
-    if selectedDay is None:
-        selectedDay = today.strftime('%Y.%m.%d')
-    else:
-        # 04.09.21
-        if selectedDay.find(str(today.year)) == -1:
-            selectedDay += f'.{today.year}'
-            selectedDay = datetime.datetime.strptime(selectedDay, '%d.%m.%Y').strftime('%Y.%m.%d')
-            print(selectedDay)
-
-    print(selectedDay)
-    selectedDay = datetime.datetime.strptime(selectedDay, '%Y.%m.%d')
-    message = f"{DateToday(selectedDay.isoweekday())}\n-------------\n"
+    message = f"{DateToday(selectedDay.isoweekday())}\n---------------------------\n"
     cur.execute(f"SELECT * FROM groups WHERE studgroup = '{group}' AND date = '{selectedDay.strftime('%Y.%m.%d')}';")
     all_results = cur.fetchall()
-    # print(all_results)
     if len(all_results) == 0:
         if selectedDay is not None:
             message = message + 'В этот день пар нет, отдыхайте'
@@ -149,6 +135,12 @@ def makeTable(cur, event, selectedDay):
                 message = message + f"{result[5]} ({result[8]}) в {result[1]} с {result[2]} по {result[6]} у {result[11]}{urltext}\n\n"
 
     return message
+
+def check_Date_Format(date):
+    for symbol in date:
+        if symbol.isdigit() or symbol == '.':
+            return True
+    return False
 
 
 if __name__ == '__main__':
@@ -182,30 +174,104 @@ if __name__ == '__main__':
         if event.type == VkBotEventType.MESSAGE_NEW:
             if 'ТТ, расписание' in str(event):
                 if event.from_chat:
-                    command = event.message.text
-                    # print(command)
-                    # print(len(command))
-                    selectedDay = ''
-                    if 'завтра' in command:
-                        selectedDay = datetime.datetime.today() + datetime.timedelta(days=1)
-                        selectedDay = selectedDay.strftime('%Y.%m.%d')
-                        command = command.replace('завтра', selectedDay)
-                    # print(command)
-                    if len(command) > 14:
-                        selectedDay = command[15:]
-                    if len(selectedDay) == 0:
-                        selectedDay = None
-                    # print(selectedDay)
+                    day = None
+                    month = None
+                    year = None
+                    if len(event.message.text) >= 15:
+                        try:
+                            date = event.message.text[15:]
+                            if check_Date_Format(date):
+                                # 04.09.2021
+                                # 4
+                                print(date)
+                                today = datetime.datetime.today()
+                                if len(date) > 2 and date.find('.') != -1:
+                                    day = date[:date.find('.')]
+                                    date = date[date.find('.') + 1:]
+                                    if date.find('.') != -1:
+                                        day = date[:date.find('.')]
+                                        date = date[date.find('.') + 1:]
+                                        if date.find('.') != -1:
+                                            month = date[:date.find('.')]
+
+                                    else:
+                                        if int(day) < today.day:
+                                            month = today.month + 1
+                                            if month == 13:
+                                                month = 1
+                                                year = today.year + 1
+                                            else:
+                                                year = today.year
+                                        else:
+                                            month = today.month
+                                            year = today.year
+
+                                else:
+                                    day = date
+                                    if int(day) < today.day:
+                                        month = today.month + 1
+                                        if month == 13:
+                                            month = 1
+                                            year = today.year + 1
+                                        else:
+                                            year = today.year
+                                    else:
+                                        month = today.month
+                                        year = today.year
+
+                                date = f'{year}.{month}.{day}'
+                                selectedDay = datetime.datetime.strptime(date, '%Y.%m.%d')
+                            else:
+                                send_Message('Неверный формат команды, выводится расписание на сегодня')
+                            '''
+                            
+
+                            print(f'Day: {day}\nMonth: {month}\nYear: {year}')
+                            
+                            if date.find('.') != -1:
+                                day = date[:date.find('.')]
+                                date = date[date.find('.') + 1:]
+                                print(date)
+                                print(f'Day: {day}')
+                                if date.find('.') != -1:
+                                    month = date[:date.find('.')]
+                                    message_Text = date[date.find('.'):]
+                                    print(date)
+                                    print(f'Month: {month}')
+                                    if date.find('.') != -1:
+                                        year = date[:date.find('.')]
+                                        date = date[date.find('.'):]
+                                        print(date)
+                                        print(f'Year: {year}')
+                                        '''
+                        except:
+                            pass
+                    else:
+                        selectedDay = datetime.datetime.today()
+                    message = makeTable(cur, event, selectedDay)
+                    message = f'Day: {day}\nMonth: {month}\nYear: {year}'
+                    send_Message(message, event.chat_id)
+
+            elif 'ТТ, test' in str(event):
+                if event.from_chat:
+                    regex = re.compile('TT, test ([\s\S]+\-\d+)')
+                    message = regex.match(event.message.text, event.chat_id)
+                    print(message)
+
+            elif 'ТТ, завтра' in str(event):
+                if event.from_chat:
+                    selectedDay = datetime.datetime.today() + datetime.timedelta(days=1)
                     message = makeTable(cur, event, selectedDay)
 
-                    vk.messages.send(
-                        key='4b413a03341032f343f6875f9a4e12e06a8d4a44',
-                        server='https://lp.vk.com/wh203814419',
-                        ts='4',
-                        random_id=get_random_id(),
-                        message=message,
-                        chat_id=event.chat_id
-                        )
+                    send_Message(message, event.chat_id)
+
+            elif 'ТТ, послезавтра' in str(event):
+                if event.from_chat:
+                    selectedDay = datetime.datetime.today() + datetime.timedelta(days=2)
+                    message = makeTable(cur, event, selectedDay)
+
+                    send_Message(message, event.chat_id)
+
             elif 'TT, init' in str(event):
                 if event.from_chat:
                     # TT init ИВТ-202
@@ -214,17 +280,20 @@ if __name__ == '__main__':
                     cur.execute(f"SELECT COUNT ({event.chat_id}) from chats WHERE chatid = {event.chat_id}")
                     if cur.fetchall() == 0:
                         cur.execute("INSERT INTO chats VALUES(?, ?);", chat)
-                        saymessage(f'Беседа успешно инициализирована, ваша группа {group}', event.chat_id)
+                        send_Message(f'Беседа успешно инициализирована, ваша группа {group}', event.chat_id)
                         conn.commit()
                         addlessons(GetTimetable(group), cur, conn)
                     else:
                         cur.execute(f"SELECT * from chats WHERE chatid = {event.chat_id}")
                         group = cur.fetchall()
-                        saymessage(f'Группа {group[0][1]} уже инициализирована!', event.chat_id)
+                        send_Message(f'Группа {group[0][1]} уже инициализирована!', event.chat_id)
 
-            elif 'TT, unit' in str(event):
+            elif 'TT, uninit' in str(event):
                 if event.from_chat:
-                    pass
+                    cur.execute(f"DELETE FROM chats WHERE chatid = {event.chat_id}")
+                    conn.commit()
+                    send_Message(f'Связь беседы и группы разорвана')
+
             elif 'TT, добавить ссылку' in str(event):
                 if event.from_chat:
                     '''
@@ -240,4 +309,4 @@ if __name__ == '__main__':
 
             elif 'ТТ,' in str(event):
                 if event.from_chat:
-                    saymessage('Такой команды нет', event.chat_id)
+                    send_Message('Такой команды нет', event.chat_id)
